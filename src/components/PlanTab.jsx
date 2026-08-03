@@ -20,7 +20,7 @@ function Field({ label, value, step = 1, onChange }) {
   );
 }
 
-export default function PlanTab({ plan, curIdx, onEdit, onAiGenerate, aiBusy }) {
+export default function PlanTab({ plan, curIdx, onEdit, onAiGenerate, aiBusy, onSetCurrent }) {
   return (
     <div className="fadein">
       <button onClick={onAiGenerate} disabled={aiBusy}
@@ -38,7 +38,14 @@ export default function PlanTab({ plan, curIdx, onEdit, onAiGenerate, aiBusy }) 
               <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cat.c }} />
               <span className="font-mono text-[11px] text-muted font-extrabold">DAY {s.day}</span>
               <span className="text-[14.5px] font-extrabold">{s.title}</span>
-              {cur && <span className="ml-auto text-[10px] font-extrabold text-ink bg-amber px-2 py-0.5 rounded-full">ตอนนี้</span>}
+              {cur ? (
+                <span className="ml-auto text-[10px] font-extrabold text-ink bg-amber px-2 py-0.5 rounded-full">ตอนนี้</span>
+              ) : (
+                <button onClick={() => onSetCurrent?.(si)}
+                  className="ml-auto text-[10px] font-bold text-muted border border-line rounded-full px-2 py-0.5 active:bg-panel2">
+                  ตั้งเป็นวันปัจจุบัน
+                </button>
+              )}
             </div>
 
             {s.kind === "workout" ? (
