@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { local } from "../lib/storage";
 import { buildDefaultPlan } from "../data/defaultPlan";
-import { defaultState } from "../lib/core";
+import { defaultState, stamp, pickNewer, mergeLogs } from "../lib/core";
 import { pullAll, enqueue, flushQueue, isSheetConfigured } from "../services/googleSheet";
 
 export function useAppData() {
@@ -27,24 +27,41 @@ export function useAppData() {
     else setSync(r.reason === "offline" ? "offline" : "pending");
   }, []);
 
-  // initial load: pull from sheet if configured (cross-device refresh)
+  // Pull from the sheet and MERGE (never blindly overwrite local).
+  // Returns true on success. Flushes local writes up first so the sheet is
+  // current before we read it back.
+  const syncPull = useCallback(async () => {
+    if (!isSheetConfigured()) return false;
+    await doFlush(); // push any pending local changes UP before reading DOWN
+    setSync("syncing");
+    try {
+      const data = await pullAll();
+      // state & plan: keep whichever side is newer (by updatedAt)
+      const mState = pickNewer(local.getState() || defaultState(), data?.state);
+      local.setState(mState); setStateState(mState);
+      const curPlan = local.getPlan();
+      const mPlan = pickNewer(curPlan, data?.plan) || curPlan;
+      if (mPlan) { local.setPlan(mPlan); setPlanState(mPlan); }
+      // logs: union both sides, de-duplicated (never lose unsynced local logs)
+      if (Array.isArray(data?.logs)) {
+        const mLogs = mergeLogs(local.getLogs(), data.logs);
+        local.setLogs(mLogs); setLogsState(mLogs);
+      }
+      setSync(local.getQueue().length ? "pending" : "synced");
+      return true;
+    } catch {
+      setSync("offline");
+      return false;
+    }
+  }, [doFlush]);
+
+  // initial load: merge with the sheet if configured (cross-device refresh)
   useEffect(() => {
     (async () => {
-      if (isSheetConfigured()) {
-        try {
-          setSync("syncing");
-          const data = await pullAll();
-          if (data?.plan) { setPlanState(data.plan); local.setPlan(data.plan); }
-          if (data?.state) { setStateState(data.state); local.setState(data.state); }
-          if (Array.isArray(data?.logs)) { setLogsState(data.logs); local.setLogs(data.logs); }
-        } catch {
-          /* offline / not reachable — keep local cache */
-        }
-        await doFlush();
-      }
+      if (isSheetConfigured()) await syncPull();
       setReady(true);
     })();
-  }, [doFlush]);
+  }, [syncPull]);
 
   // flush when connection returns
   useEffect(() => {
@@ -54,13 +71,15 @@ export function useAppData() {
   }, [doFlush]);
 
   const savePlan = useCallback((p) => {
-    setPlanState(p); local.setPlan(p);
-    enqueue({ t: "kv", key: "plan", value: p }); doFlush();
+    const v = stamp(p);
+    setPlanState(v); local.setPlan(v);
+    enqueue({ t: "kv", key: "plan", value: v }); doFlush();
   }, [doFlush]);
 
   const saveState = useCallback((s) => {
-    setStateState(s); local.setState(s);
-    enqueue({ t: "kv", key: "state", value: s }); doFlush();
+    const v = stamp(s);
+    setStateState(v); local.setState(v);
+    enqueue({ t: "kv", key: "state", value: v }); doFlush();
   }, [doFlush]);
 
   const appendLogs = useCallback((rows) => {
@@ -75,19 +94,12 @@ export function useAppData() {
 
   const refreshFromSheet = useCallback(async () => {
     if (!isSheetConfigured()) return { ok: false, reason: "no-sheet" };
-    try {
-      setSync("syncing");
-      const data = await pullAll();
-      if (data?.plan) { setPlanState(data.plan); local.setPlan(data.plan); }
-      if (data?.state) { setStateState(data.state); local.setState(data.state); }
-      if (Array.isArray(data?.logs)) { setLogsState(data.logs); local.setLogs(data.logs); }
-      setSync("synced");
-      return { ok: true };
-    } catch (e) { setSync("offline"); return { ok: false, reason: String(e) }; }
-  }, []);
+    const ok = await syncPull();
+    return ok ? { ok: true } : { ok: false, reason: "offline" };
+  }, [syncPull]);
 
   const resetAll = useCallback(() => {
-    const p = buildDefaultPlan(); const s = defaultState();
+    const p = stamp(buildDefaultPlan()); const s = stamp(defaultState());
     setPlanState(p); setStateState(s); setLogsState([]);
     local.setPlan(p); local.setState(s); local.setLogs([]); local.clearQueue();
     enqueue({ t: "reset" });
