@@ -43,6 +43,22 @@ export const local = {
   setQueue: (q) => write(K.queue, q),
   pushQueue: (op) => write(K.queue, [...read(K.queue, []), op]),
   clearQueue: () => write(K.queue, []),
+
+  // in-progress workout entries (so a mid-session reload doesn't lose typed sets)
+  getDraft: (id) => read("il_draft_" + id, null),
+  setDraft: (id, v) => write("il_draft_" + id, v),
+  clearDraft: (id) => { try { localStorage.removeItem("il_draft_" + id); } catch { /* ignore */ } },
+};
+
+export { K };  appendLogs: (rows) => write(K.logs, [...read(K.logs, []), ...rows]),
+
+  getSettings: () => read(K.settings, { sheetUrl: "", aiKey: "", aiProvider: "gemini", restSec: 90 }),
+  setSettings: (s) => write(K.settings, s),
+
+  getQueue: () => read(K.queue, []),
+  setQueue: (q) => write(K.queue, q),
+  pushQueue: (op) => write(K.queue, [...read(K.queue, []), op]),
+  clearQueue: () => write(K.queue, []),
 };
 
 export { K };
