@@ -74,6 +74,13 @@ export default function App() {
 
   const startRest = () => timer.start(settings.restSec || 90);
 
+  const setCurrentDay = (idx) => {
+    // manual recovery / jump: anchor the shift logic to today so no bogus "missed" banner
+    data.saveState({ ...state, idx, lastCompletedDate: today });
+    flash(`ตั้งเป็น Day ${plan.sessions[idx].day} · ${plan.sessions[idx].title}`);
+    setTab("today");
+  };
+
   const editPlan = (si, ei, field, val) => {
     const p = structuredClone(plan);
     p.sessions[si].exercises[ei][field] = val;
@@ -158,7 +165,7 @@ export default function App() {
             onRestDone={restDone} onCardio={cardio} onLogSet={startRest} />
         )}
         {tab === "plan" && (
-          <PlanTab plan={plan} curIdx={state.idx} onEdit={editPlan} onAiGenerate={runAi} aiBusy={aiBusy} />
+          <PlanTab plan={plan} curIdx={state.idx} onEdit={editPlan} onAiGenerate={runAi} aiBusy={aiBusy} onSetCurrent={setCurrentDay} />
         )}
         {tab === "history" && <HistoryTab plan={plan} logs={logs} />}
         {tab === "tools" && (
