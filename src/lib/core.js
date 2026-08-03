@@ -28,6 +28,7 @@ export const defaultState = () => ({
   cycle: 1,
   startDate: localISO(),
   lastCompletedDate: null,
+  updatedAt: 0,
 });
 
 // Advance the pointer when a session is completed (or a rest is taken).
@@ -123,3 +124,25 @@ export const LOG_COLUMNS = [
   "logId", "date", "dayIndex", "sessionId", "kind", "title",
   "exName", "perSide", "setNo", "weight", "reps", "extra",
 ];
+
+// --- sync merge helpers -----------------------------------------------------
+// Stamp an object with a fresh version marker before saving.
+export const stamp = (obj) => ({ ...obj, updatedAt: Date.now() });
+
+// Keep whichever of local/remote is newer (by updatedAt). Ties -> local, so a
+// device never clobbers its own just-made change with an equal-timestamped pull.
+export function pickNewer(localObj, remoteObj) {
+  if (!remoteObj) return localObj || null;
+  if (!localObj) return remoteObj;
+  return (remoteObj.updatedAt || 0) > (localObj.updatedAt || 0) ? remoteObj : localObj;
+}
+
+// Union logs from both sides, de-duplicated. A pull must never drop local logs
+// that haven't reached the sheet yet, nor re-add ones already there.
+export function mergeLogs(localLogs, remoteLogs) {
+  const key = (r) => `${r.logId}|${r.kind}|${r.date}|${r.exName}|${r.setNo}`;
+  const map = new Map();
+  for (const r of remoteLogs || []) map.set(key(r), r);
+  for (const r of localLogs || []) map.set(key(r), r); // local wins on tie
+  return Array.from(map.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
