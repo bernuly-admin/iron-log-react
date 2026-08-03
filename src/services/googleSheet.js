@@ -7,7 +7,7 @@
 //   skips the CORS preflight that Apps Script cannot answer.
 // * GET pulls the whole dataset for first load / cross-device refresh.
 
-import { local } from "../lib/storage";
+import { local } from "../lib/storage.js";
 
 function sheetUrl() {
   return (local.getSettings().sheetUrl || "").trim();
@@ -66,20 +66,24 @@ export async function flushQueue() {
   if (flushing || !isSheetConfigured()) return { ok: false, reason: "skip" };
   if (typeof navigator !== "undefined" && navigator.onLine === false)
     return { ok: false, reason: "offline" };
-  const queue = local.getQueue();
-  if (!queue.length) return { ok: true, sent: 0 };
+  if (!local.getQueue().length) return { ok: true, sent: 0 };
 
   flushing = true;
   let sent = 0;
   try {
-    // process in order; keep unsent ones on failure
-    const remaining = [...queue];
-    while (remaining.length) {
-      const op = remaining[0];
-      await runOp(op); // throws on failure -> caught below
-      remaining.shift();
+    // Re-read the LIVE queue every iteration so ops enqueued *while* a POST is
+    // in flight are never lost. Always send the front op (FIFO) and pop it only
+    // after it succeeds. (Bug fix: the old code snapshotted the queue once and
+    // wrote the stale snapshot back, silently dropping mid-flush writes such as
+    // the day-pointer update — which threw the user back to Day 1.)
+    while (true) {
+      const q = local.getQueue();
+      if (!q.length) break;
+      await runOp(q[0]); // throws on failure -> caught below
+      const q2 = local.getQueue(); // may have grown during the await
+      q2.shift(); // remove the op we just sent (still the front — we only append)
+      local.setQueue(q2);
       sent++;
-      local.setQueue(remaining); // persist progress after each op
     }
     return { ok: true, sent };
   } catch (e) {
